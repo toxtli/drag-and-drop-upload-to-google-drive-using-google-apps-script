@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <script src="http://code.jquery.com/jquery-latest.js"></script>
+    </head>
+<body>
+    <style>
+        #drop_zone {
+          border: 5px solid blue;
+          width:  200px;
+          height: 100px;
+        }
+    </style>
+    <script>
+        var baseUrl = "[YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL]";
+        var filesQueue = [];
+        var isRunning = false;
+
+        function drop_handler(ev) {
+            ev.preventDefault();
+            var dt = ev.dataTransfer;
+            if (dt.items) {
+                for (var i=0; i < dt.items.length; i++) {
+                    var item = dt.items[i];
+                    if (item.kind == "file") {
+                        var entry = item.webkitGetAsEntry();
+                        if (entry.isDirectory) {
+                            traverseFileTree(entry);
+                        } else {
+                            var file = dt.items[i].getAsFile();
+                            enqueueFile(file);
+                        }
+                    }
+                }
+            }
+        }
+
+        function dragend_handler(ev) {
+            var dt = ev.dataTransfer;
+            if (dt.items) {
+                for (var i = 0; i < dt.items.length; i++) {
+                    dt.items.remove(i);
+                }
+            } else {
+                ev.dataTransfer.clearData();
+            }
+        }
+
+        function traverseFileTree(item, path) {
+            path = path || "";
+            if (item.isFile) {
+                item.file(function(file) {
+                    enqueueFile(file);
+                });
+            } else if (item.isDirectory) {
+                var dirReader = item.createReader();
+                dirReader.readEntries(function(entries) {
+                    for (var i=0; i<entries.length; i++) {
+                        traverseFileTree(entries[i], path + item.name + "/");
+                    }
+                });
+            }
+        }
+
+        function dragover_handler(ev) {
+            var fr = new FileReader();
+            ev.preventDefault();
+        }
+
+        function enqueueFile(file) {
+            filesQueue.push(file);
+            if (isRunning == false) {
+                processFiles();
+            }
+        }
+
+        function appendResult(content) {
+            $("#results").append("<p>" + content + "</p>")
+        }
+
+        function processFiles() {
+            if (filesQueue.length > 0) {
+                isRunning = true;
+                var file = filesQueue.pop();
+                appendResult("Uploading: " + file.name);
+                var fr = new FileReader();
+                fr.onload = function(e) {
+                    var fileContent = e.target.result;
+                    var mimeType = e.target.result.match(/:(.*?);/)[1];
+                    uploadContent(file.name, mimeType, e.target.result.replace(/^.*,/, ''));
+                }
+                fr.readAsDataURL(file);
+            } else {
+                isRunning = false;
+                appendResult("All the files were uploaded");
+            }
+        }
+
+        function uploadContent(fileName, mimeType, content) {
+            $.post(baseUrl, {
+                filename: fileName,
+                mimeType: mimeType,
+                file: content
+            }, function(result){
+                appendResult("Uploaded <a href='" + result.value + "' target='_blank'>here</a>");
+                processFiles();
+            });
+        }
+    </script>
+
+    <div id="drop_zone" ondrop="drop_handler(event);" ondragover="dragover_handler(event);" ondragend="dragend_handler(event);">
+      <strong>Drag one or more files to this Drop Zone ...</strong>
+    </div>
+    <div id="results"></div>
+</body>
+</html>
